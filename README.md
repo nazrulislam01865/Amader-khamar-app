@@ -1,0 +1,2 @@
+# Amader-khamar-app
+flutter
