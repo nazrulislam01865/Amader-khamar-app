@@ -1,0 +1,312 @@
+import 'dart:io';
+import 'dart:typed_data';
+import '../models/task_model.dart';
+import '../models/task_photo_model.dart';
+import '../../models/task_assignment_model.dart';
+import '../../services/api_service.dart';
+import '../../services/task_service.dart';
+import '../../core/utils/date_formatter.dart';
+import '../../core/utils/task_thumbnail_resolver.dart';
+import '../../core/utils/task_time_helper.dart';
+import 'task_repository.dart';
+
+class ApiTaskRepository implements TaskRepository {
+  final TaskService _taskService;
+  final ApiService _apiService;
+  List<TaskModel> _cachedTasks = [];
+
+  ApiTaskRepository({TaskService? taskService, ApiService? apiService})
+      : _taskService = taskService ?? TaskService(),
+        _apiService = apiService ?? ApiService();
+
+  @override
+  Future<List<TaskModel>> getTodayTasks() async {
+    try {
+      final assignments = await _taskService.fetchAssignments(forceRefresh: true);
+      _cachedTasks = assignments.map(taskModelFromAssignment).toList();
+      return List.unmodifiable(_cachedTasks);
+    } catch (_) {
+      // Offline fallback: try reading from local cache
+      final cached = _taskService.getCachedAssignments();
+      _cachedTasks = cached.map(taskModelFromAssignment).toList();
+      return List.unmodifiable(_cachedTasks);
+    }
+  }
+
+  @override
+  Future<TaskModel?> getTaskById(String id) async {
+    try {
+      return _cachedTasks.firstWhere((t) => t.id == id);
+    } catch (_) {
+      final tasks = await getTodayTasks();
+      try {
+        return tasks.firstWhere((t) => t.id == id);
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  @override
+  Future<void> addPhotoToTask(String taskId, TaskPhotoModel photo) async {
+    final index = _cachedTasks.indexWhere((task) => task.id == taskId);
+    if (index >= 0) {
+      final photos = List<TaskPhotoModel>.from(_cachedTasks[index].photos)..add(photo);
+      _cachedTasks[index] = _cachedTasks[index].copyWith(photos: photos);
+    }
+    final assignmentId = int.tryParse(taskId);
+    if (assignmentId != null && assignmentId > 0) {
+      final confirmed = await _apiService.startAssignment(assignmentId);
+      if (index >= 0) {
+        _cachedTasks[index] = _cachedTasks[index].copyWith(
+          status: TaskStatus.inProgress,
+          badgeText: 'চলছে',
+          startedAt: confirmed.startedAt,
+        );
+      }
+    }
+  }
+
+  @override
+  Future<void> startTask(String taskId) async {
+    final assignmentId = int.tryParse(taskId);
+    if (assignmentId == null || assignmentId <= 0) {
+      throw StateError('Invalid assignment ID');
+    }
+    final confirmed = await _apiService.startAssignment(assignmentId);
+    final index = _cachedTasks.indexWhere((task) => task.id == taskId);
+    if (index >= 0) {
+      _cachedTasks[index] = taskModelFromAssignment(confirmed);
+    }
+  }
+
+  @override
+  Future<void> submitTask(String taskId, [List<TaskPhotoModel>? photos]) async {
+    final index = _cachedTasks.indexWhere((t) => t.id == taskId);
+    if (index != -1) {
+      final current = _cachedTasks[index];
+      final isNowLate = TaskTimeHelper.isTaskLate(
+        date: current.date,
+        startTime: current.startTime,
+        endTime: current.endTime,
+        startedAt: current.startedAt,
+        completedAt: DateTime.now().toIso8601String(),
+        existingIsLate: current.isLate,
+      );
+
+      final sourcePhotos = (photos != null && photos.isNotEmpty) ? photos : current.photos;
+      final List<SubmittedPhotoDetail> detailed = [];
+      for (int i = 0; i < sourcePhotos.length; i++) {
+        final p = sourcePhotos[i];
+        detailed.add(SubmittedPhotoDetail(
+          id: i + 1,
+          url: p.localPath,
+          latitude: p.latitude,
+          longitude: p.longitude,
+          capturedAt: p.capturedAt.toIso8601String(),
+          insideGeofence: p.insideGeofence,
+          isLate: isNowLate,
+        ));
+      }
+
+      _cachedTasks[index] = _cachedTasks[index].copyWith(
+        status: TaskStatus.completed,
+        badgeText: 'সম্পন্ন',
+        completedAt: DateTime.now().toIso8601String(),
+        isLate: isNowLate,
+        photos: sourcePhotos,
+        submittedPhotos: detailed.isNotEmpty ? detailed : _cachedTasks[index].submittedPhotos,
+      );
+    }
+  }
+
+  @override
+  Future<TaskModel> submitSelfReportedTask({
+    required String description,
+    double? latitude,
+    double? longitude,
+    double? accuracy,
+    String? locationName,
+    int? farmLocationId,
+    String? photoPath,
+  }) async {
+    Uint8List? photoBytes;
+    String? photoFileName;
+    if (photoPath != null && photoPath.isNotEmpty) {
+      try {
+        final file = File(photoPath);
+        if (await file.exists()) {
+          photoBytes = await file.readAsBytes();
+          photoFileName = photoPath.split(Platform.pathSeparator).last;
+        }
+      } catch (_) {}
+    }
+
+    try {
+      final createdAssignment = await _apiService.selfReportTask(
+        description: description,
+        latitude: latitude,
+        longitude: longitude,
+        accuracy: accuracy,
+        locationId: farmLocationId,
+        photoBytes: photoBytes,
+        photoFileName: photoFileName,
+      );
+      final taskModel = taskModelFromAssignment(createdAssignment);
+      _cachedTasks.insert(0, taskModel);
+      return taskModel;
+    } catch (_) {
+      // Do not report an unacknowledged submission as completed.
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> resetDemoData() async {
+    _cachedTasks = [];
+  }
+
+  static TaskModel taskModelFromAssignment(TaskAssignmentModel assignment) {
+    TaskStatus status = TaskStatus.scheduled;
+    String badgeText = 'আজ করব';
+    bool isOverdueTime = false;
+
+    final now = DateTime.now();
+    final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    final isPastDate = assignment.scheduledDate.isNotEmpty &&
+        assignment.scheduledDate != 'আজ' &&
+        assignment.scheduledDate.compareTo(todayStr) < 0;
+    final isFutureDate = assignment.scheduledDate.isNotEmpty &&
+        assignment.scheduledDate != 'আজ' &&
+        assignment.scheduledDate.compareTo(todayStr) > 0;
+
+    switch (assignment.status) {
+      case 'completed':
+        status = TaskStatus.completed;
+        badgeText = 'সম্পন্ন';
+        break;
+      case 'in_progress':
+        status = TaskStatus.inProgress;
+        final isStartedLate = TaskTimeHelper.isTaskLate(
+          date: assignment.scheduledDate,
+          startTime: assignment.startTime,
+          endTime: assignment.endTime,
+          startedAt: assignment.startedAt,
+          completedAt: null,
+        );
+        if (isStartedLate || assignment.status == 'late') {
+          badgeText = 'দেরি হয়েছে';
+          isOverdueTime = true;
+        } else {
+          badgeText = 'চলছে';
+        }
+        break;
+      case 'submitted':
+        status = TaskStatus.submitted;
+        badgeText = 'রিভিউ অপেক্ষায়';
+        break;
+      case 'late':
+        status = TaskStatus.inProgress;
+        badgeText = 'দেরি হয়েছে';
+        isOverdueTime = true;
+        break;
+      case 'assigned':
+      case 'pending':
+      default:
+        status = TaskStatus.scheduled;
+        if (isFutureDate) {
+          badgeText = 'আসন্ন (${DateFormatter.formatShortDate(assignment.scheduledDate)})';
+        } else if (isPastDate) {
+          badgeText = 'বাকি আছে';
+          isOverdueTime = true;
+        } else {
+          // Scheduled for today - check if start_time has passed (1 min threshold)
+          final isStartPassed = TaskTimeHelper.isStartTimePassed(
+            date: assignment.scheduledDate,
+            startTime: assignment.startTime,
+            now: now,
+          );
+          if (isStartPassed) {
+            badgeText = 'বাকি আছে';
+            isOverdueTime = true;
+          } else {
+            badgeText = 'আজ করব';
+          }
+        }
+        break;
+    }
+
+    final thumbnail = TaskThumbnailResolver.resolve(
+      category: assignment.task?.category,
+      name: assignment.task?.name,
+    );
+
+    final timeRange = DateFormatter.formatTimeRange(assignment.startTime, assignment.endTime);
+
+    final sub = assignment.submission;
+    final bool calculatedLate = TaskTimeHelper.isTaskLate(
+      date: assignment.scheduledDate,
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+      startedAt: assignment.startedAt,
+      completedAt: assignment.completedAt ?? sub?.submittedAt,
+      existingIsLate: sub?.isLate,
+    );
+    final bool isSubmissionLate = calculatedLate || isOverdueTime || (assignment.status == 'late');
+    final bool? geoPassed = sub?.geofencePassed;
+    final double? dist = sub?.distanceMeters;
+    final List<String> photoUrls = sub?.photoUrls ?? [];
+    final List<SubmittedPhotoDetail> detailedPhotos = List<SubmittedPhotoDetail>.from(sub?.photosDetailed ?? []);
+    if (detailedPhotos.isEmpty && photoUrls.isNotEmpty) {
+      for (int i = 0; i < photoUrls.length; i++) {
+        detailedPhotos.add(
+          SubmittedPhotoDetail(
+            id: i + 1,
+            url: photoUrls[i],
+            latitude: assignment.location?.latitude,
+            longitude: assignment.location?.longitude,
+            capturedAt: sub?.submittedAt,
+            insideGeofence: geoPassed,
+            isLate: isSubmissionLate,
+          ),
+        );
+      }
+    }
+
+    return TaskModel(
+      id: assignment.id.toString(),
+      title: assignment.task?.name ?? 'কৃষি কাজ',
+      subTitle: assignment.task?.category ?? 'মাঠ কাজ',
+      ownerId: assignment.farmer?['id']?.toString() ?? '1',
+      ownerName: assignment.farmer?['full_name']?.toString() ?? 'বশির এগ্রো',
+      farmName: 'বশির এগ্রো ফার্ম',
+      locationId: assignment.location?.id.toString() ?? '1',
+      locationName: assignment.location?.name ?? 'ফার্ম লোকেশন',
+      fullAddress: assignment.location?.address ?? '',
+      latitude: assignment.location?.latitude,
+      longitude: assignment.location?.longitude,
+      fieldBoundary: assignment.location?.fieldBoundary,
+      geofenceRadiusMeters: assignment.location?.geofenceRadiusMeters ?? 100,
+      timeRange: timeRange,
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+      date: assignment.scheduledDate.isNotEmpty ? assignment.scheduledDate : 'আজ',
+      description: assignment.task?.instructions ?? assignment.notes ?? 'নির্ধারিত কাজ সম্পন্ন করে ছবি ও রিপোর্ট জমা দিন।',
+      instructions: assignment.task?.instructions ?? 'ক্ষেতে গিয়ে ফসলের বর্তমান অবস্থা বা কাজের পরিষ্কার রিয়েল-টাইম ছবি তুলে পাঠান।',
+      minPhotos: assignment.task?.minPhotosRequired ?? 1,
+      maxPhotos: 5,
+      status: status,
+      badgeText: badgeText,
+      thumbnailType: thumbnail,
+      isLate: isSubmissionLate,
+      photos: const [],
+      startedAt: assignment.startedAt,
+      completedAt: assignment.completedAt,
+      geofencePassed: geoPassed,
+      distanceMeters: dist,
+      submittedAt: sub?.submittedAt,
+      evidencePhotoUrls: photoUrls,
+      submittedPhotos: detailedPhotos,
+    );
+  }
+}
