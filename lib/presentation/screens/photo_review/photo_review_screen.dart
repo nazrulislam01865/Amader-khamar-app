@@ -63,7 +63,7 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('মাঠের বাইরে অবস্থান!'),
           content: const Text(
-            'আপনি নির্ধারিত মাঠের সীমানার বাইরে আছেন। আপনি কি নিশ্চিত যে আপনি এটি জমা দিতে চান?',
+            'আপনি নির্ধারিত মাঠের সীমানার বাইরে আছেন। জমা দিলে সার্ভার জিপিএস যাচাই করে প্রতিবেদনটি সতর্কতাসহ চিহ্নিত করবে। আপনি কি জমা দিতে চান?',
           ),
           actions: [
             TextButton(
@@ -73,7 +73,7 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                _executeSubmit(overrideGeofence: true);
+                _executeSubmit();
               },
               child: const Text('হ্যাঁ, জমা দিন'),
             ),
@@ -83,12 +83,12 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
       return;
     }
 
-    return _executeSubmit(overrideGeofence: false);
+    return _executeSubmit();
   }
 
   String? _submissionKey;
 
-  Future<void> _executeSubmit({bool overrideGeofence = false}) async {
+  Future<void> _executeSubmit() async {
     if (_isSubmitting) return;
     _submissionKey ??= newSubmissionKey();
     final photo = ref.read(latestCapturedPhotoProvider);
@@ -159,7 +159,7 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
           accuracy: accuracy, notes: notes,
           photoPaths: uploadPhotos.map((p) => p.localPath).toList(),
           photoMetadata: photoMetadataList,
-          overrideGeofence: overrideGeofence,
+          // Farmer consent is not an administrator's geofence override.
           idempotencyKey: _submissionKey,
         );
         ref.read(offlineSyncProvider.notifier).updatePendingCount();
@@ -205,7 +205,6 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
           notes: notes.isNotEmpty ? notes : null,
           photoBytesList: photoBytesList,
           photoMetadata: photoMetadataList,
-          overrideGeofence: overrideGeofence,
           idempotencyKey: _submissionKey,
         );
         if (!result.success || result.receiptId == null ||
@@ -235,9 +234,10 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
               ? 'সার্ভার সাময়িকভাবে অনুপলব্ধ। প্রমাণ সংরক্ষিত আছে; পরে আবার সিঙ্ক করা হবে।'
               : 'সার্ভার অনুপলব্ধ এবং স্থানীয়ভাবে প্রমাণ সংরক্ষণ করা যায়নি।';
         } else if (e.statusCode == 422) {
-          final isPhotoError = e.message.contains('ছবি') || e.message.toLowerCase().contains('photo');
-          isSubmissionFailed = isPhotoError;
-          isGeofenceRejected = !isPhotoError;
+          // A validation error is not necessarily a geofence rejection.
+          isGeofenceRejected = e.message.toLowerCase().contains('geofence') ||
+              e.message.contains('সীমানা');
+          isSubmissionFailed = !isGeofenceRejected;
           statusMessage = e.message;
         } else {
           isSubmissionFailed = true;
@@ -368,14 +368,6 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
                     style: ElevatedButton.styleFrom(backgroundColor: AppColors.errorRed),
                     child: const Text('পুনরায় ছবি তুলুন', style: TextStyle(color: Colors.white)),
                   ),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _executeSubmit(overrideGeofence: true);
-                    },
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF006837)),
-                    child: const Text('তাও জমা দিন', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
                 ]
               : (isSubmissionFailed
                   ? [
@@ -386,7 +378,7 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
                       ElevatedButton(
                         onPressed: () {
                           Navigator.pop(ctx);
-                          _executeSubmit(overrideGeofence: overrideGeofence);
+                          _executeSubmit();
                         },
                         style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen),
                         child: const Text('পুনরায় চেষ্টা করুন', style: TextStyle(color: Colors.white)),

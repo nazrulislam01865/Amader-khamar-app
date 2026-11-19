@@ -17,6 +17,7 @@ import 'package:image/image.dart' as img;
 class ReceiptApi extends ApiService {
   int uploads = 0;
   int? error;
+  bool? lastOverrideGeofence;
   ReceiptApi();
 
   @override
@@ -27,6 +28,7 @@ class ReceiptApi extends ApiService {
     String? idempotencyKey,
   }) async {
     uploads++;
+    lastOverrideGeofence = overrideGeofence;
     if (error != null) throw ApiException(error!, 'Server rejected test submission');
     return ApiSubmissionResult(
       success: true, message: 'ok', submissionId: 42,
@@ -81,6 +83,20 @@ void main() {
     expect(reopened.pendingCount, 0);
     expect(reopened.items.first.serverReceiptId, 'receipt-42');
     expect(await File(reopened.items.first.photoPaths.first).exists(), true);
+  });
+
+  test('legacy outside-boundary queue replays without privileged geofence override', () async {
+    final api = ReceiptApi();
+    final sync = OfflineSyncService(apiService: api, storage: prefs, queue: store);
+    final item = await sync.queueSubmission(
+      assignmentId: 52, latitude: 23.5, longitude: 90.3,
+      photoPaths: [cameraFile.path], overrideGeofence: true,
+    );
+    expect(item.overrideGeofence, isTrue); // Preserve the original evidence record.
+    expect(await sync.syncPendingSubmissions(), 1);
+    expect(api.lastOverrideGeofence, isFalse);
+    expect(store.items.single.overrideGeofence, isTrue);
+    expect(store.items.single.syncStatus, SubmissionSyncStatus.synced);
   });
 
   test('400 and 409 never cause false sync or delete photographs', () async {

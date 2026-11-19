@@ -1,4 +1,4 @@
-package com.itqanconsulting.farmtrack
+package com.amaderkhamar
 
 import io.flutter.embedding.android.FlutterActivity
 

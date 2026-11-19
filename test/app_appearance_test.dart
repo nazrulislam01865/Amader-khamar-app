@@ -3,6 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bashir_agro_app_2/state/app_appearance.dart';
 
 void main() {
+  test('mobile login logo uses the existing admin site logo URL', () {
+    final configured = AppAppearance.fromJson({
+      'branding': {'logo_url': 'https://example.org/storage/branding/logo.png'},
+      'headers': {},
+    });
+    expect(configured.loginLogoUrl, 'https://example.org/storage/branding/logo.png');
+    expect(AppAppearance.fromJson({'branding': {}, 'headers': {}}).loginLogoUrl, isNull);
+    expect(AppAppearance.fromJson({'branding': {'logo_url': 'javascript:alert(1)'}, 'headers': {}}).loginLogoUrl, isNull);
+    expect(AppAppearance.fromJson({'branding': {'logo_url': '//example.org/logo.png'}, 'headers': {}}).loginLogoUrl, isNull);
+  });
+
   test('remote appearance uses validated, bounded style settings', () {
     final app = AppAppearance.fromJson({
       'branding': {'name': 'Bashir Agro'},

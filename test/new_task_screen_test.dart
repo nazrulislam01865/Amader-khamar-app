@@ -5,8 +5,27 @@ import 'package:bashir_agro_app_2/presentation/screens/new_task/new_task_screen.
 import 'package:bashir_agro_app_2/state/app_state.dart';
 import 'package:bashir_agro_app_2/state/farmer_app_state.dart';
 import 'package:bashir_agro_app_2/services/gps_service.dart';
+import 'package:bashir_agro_app_2/services/api_service.dart';
 import 'package:bashir_agro_app_2/data/repositories/task_repository.dart';
 import 'package:bashir_agro_app_2/models/task_assignment_model.dart';
+
+// UI tests must not fetch farms from a live/authenticated backend.  The screen
+// intentionally reads apiServiceProvider directly, not taskRepositoryProvider.
+class TestAuthorizedFarmsApi extends ApiService {
+  @override
+  Future<List<FarmLocationDetail>> getFarms() async => const [
+    FarmLocationDetail(
+      id: 1,
+      locationCode: 'LOC-TEST',
+      name: 'উত্তর মাঠ',
+      type: 'সবজি ক্ষেত',
+      address: 'পরীক্ষার জমি',
+      latitude: 23.7808,
+      longitude: 90.4152,
+      geofenceRadiusMeters: 100,
+    ),
+  ];
+}
 
 class MockLocationResolutionService extends LocationResolutionService {
   final ResolvedLocation stubResult;
@@ -43,6 +62,7 @@ void main() {
   Widget createWidget({ResolvedLocation? location}) {
     return ProviderScope(
       overrides: [
+        apiServiceProvider.overrideWithValue(TestAuthorizedFarmsApi()),
         taskRepositoryProvider.overrideWithValue(MockTaskRepository()),
         locationResolutionServiceProvider.overrideWithValue(
           MockLocationResolutionService(location ?? defaultStubLocation),
@@ -169,6 +189,25 @@ void main() {
 
       // Live camera screen opens with live camera header
       expect(find.text('মাঠের লাইভ ক্যামেরা'), findsOneWidget);
+    });
+
+    testWidgets('compact screen shows camera and GPS helper without layout overflow', (tester) async {
+      tester.view.physicalSize = const Size(360, 760);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(createWidget());
+      await tester.pump();
+      await tester.ensureVisible(find.text('📷 সরাসরি ক্যামেরা দিয়ে ছবি তুলুন *'));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(find.text('সিলেক্টেড প্লটের সাপেক্ষে জিপিএস উপস্থিতি রেকর্ড করা হবে'));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('5. Displays farm name and "প্লটের ভেতরে আছেন" when inside farm plot', (tester) async {

@@ -1173,19 +1173,22 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
         ),
         child: Container(
           width: double.infinity,
-          height: 96,
+          constraints: const BoxConstraints(minHeight: 96),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           decoration: BoxDecoration(
             color: const Color(0xFFFEF2F2),
             borderRadius: BorderRadius.circular(14),
           ),
           child: const Center(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.camera_alt_rounded, color: Color(0xFFDC2626), size: 30),
                 SizedBox(height: 6),
                 Text(
                   '📷 সরাসরি ক্যামেরা দিয়ে ছবি তুলুন *',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -1195,6 +1198,7 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
                 SizedBox(height: 2),
                 Text(
                   'মাঠে লাইভ উপস্থিত থেকে ছবি তোলা বাধ্যতামূলক (গ্যালারি প্রযোজ্য নয়)',
+                  textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 11.5, color: Color(0xFF7F1D1D)),
                 ),
               ],
@@ -1634,9 +1638,10 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
 
           const SizedBox(height: 8),
 
-          // Map Legend / Helper Row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Map legend wraps rather than overflowing on compact/text-scaled screens.
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
             children: [
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1713,9 +1718,11 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
             children: [
               Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF64748B)),
               SizedBox(width: 5),
-              Text(
-                'সিলেক্টেড প্লটের সাপেক্ষে জিপিএস উপস্থিতি রেকর্ড করা হবে',
-                style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+              Expanded(
+                child: Text(
+                  'সিলেক্টেড প্লটের সাপেক্ষে জিপিএস উপস্থিতি রেকর্ড করা হবে',
+                  style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                ),
               ),
             ],
           ),

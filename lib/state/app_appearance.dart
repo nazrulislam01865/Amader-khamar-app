@@ -14,6 +14,17 @@ class AppAppearance {
         Map<String, dynamic>.from(data['headers'] is Map ? data['headers'] as Map : {}),
       );
 
+  /// The existing admin Site Logo is published at /api/v1/app-appearance.
+  /// Reject invalid URLs; the login screen keeps its current icon as fallback.
+  String? get loginLogoUrl {
+    final raw = branding['logo_url'];
+    if (raw is! String || raw.trim().isEmpty) return null;
+    final url = Uri.tryParse(raw);
+    if (url == null || !url.hasAuthority || url.userInfo.isNotEmpty ||
+        (url.scheme != 'https' && url.scheme != 'http')) return null;
+    return raw;
+  }
+
   HeaderStyle forScreen(String id) {
     final raw = headers[id];
     return HeaderStyle(raw is Map ? Map<String, dynamic>.from(raw) : const {});

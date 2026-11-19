@@ -308,7 +308,7 @@ class _CompletedTaskMapWidgetState extends State<CompletedTaskMapWidget> {
                         subdomains: _isSatelliteStyle
                             ? MapboxConfig.getSatelliteSubdomains()
                             : MapboxConfig.getStreetSubdomains(),
-                        userAgentPackageName: 'com.itqanconsulting.farmtrack',
+                        userAgentPackageName: 'com.amaderkhamar',
                         maxZoom: 21,
                         maxNativeZoom: _isSatelliteStyle ? 20 : 19,
                       ),

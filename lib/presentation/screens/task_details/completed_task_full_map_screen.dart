@@ -265,7 +265,7 @@ class _CompletedTaskFullMapScreenState extends State<CompletedTaskFullMapScreen>
                 subdomains: _isSatelliteStyle
                     ? MapboxConfig.getSatelliteSubdomains()
                     : MapboxConfig.getStreetSubdomains(),
-                userAgentPackageName: 'com.itqanconsulting.farmtrack',
+                userAgentPackageName: 'com.amaderkhamar',
                 maxZoom: 21,
                 maxNativeZoom: _isSatelliteStyle ? 20 : 19,
               ),

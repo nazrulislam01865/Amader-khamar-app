@@ -159,7 +159,10 @@ class OfflineSyncService {
           notes: snapshot.notes,
           photoBytesList: photos,
           photoMetadata: snapshot.photoMetadata,
-          overrideGeofence: snapshot.overrideGeofence,
+          // Old farmer queues may contain override=true from the previous UI.
+          // Submit them normally; the server alone validates and flags location.
+          // Keep the durable record and idempotency key unchanged.
+          overrideGeofence: false,
           idempotencyKey: snapshot.idempotencyKey,
         );
         if (result.success && result.receiptId != null &&

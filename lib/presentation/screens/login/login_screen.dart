@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/config/privacy_policy_config.dart';
 import '../../../data/models/user_model.dart';
 import '../../../state/app_state.dart';
+import '../../../state/app_appearance.dart';
 import '../../widgets/farm_graphics.dart';
 
 import '../../../state/farmer_app_state.dart';
@@ -120,6 +121,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
+    final loginLogoUrl = ref.watch(appAppearanceProvider).value?.loginLogoUrl;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -175,7 +177,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const SizedBox(height: 10),
-                        const SproutLogoBadge(size: 96),
+                        if (loginLogoUrl != null)
+                          Image.network(
+                            loginLogoUrl,
+                            key: const Key('admin-login-logo'),
+                            width: 96,
+                            height: 96,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) => const SproutLogoBadge(size: 96),
+                          )
+                        else
+                          const SproutLogoBadge(size: 96),
                         const SizedBox(height: 14),
                         const Text(
                           'আমাদের খামার',

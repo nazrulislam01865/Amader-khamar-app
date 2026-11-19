@@ -117,6 +117,15 @@ class _FieldBoundaryMapWidgetState extends State<FieldBoundaryMapWidget>
     } catch (_) {}
   }
 
+  // The 195px task-card map cannot use the same high-zoom camera fit as the
+  // full-screen map. At that zoom some raster sources have no usable tiles.
+  // Keep the full-screen behavior unchanged and fit the compact preview lower.
+  double get _fitMaxZoom => widget.isInteractive ? 18.5 : 16.0;
+  EdgeInsets get _fitPadding => widget.isInteractive
+      ? const EdgeInsets.all(48.0)
+      : const EdgeInsets.all(16.0);
+  double get _defaultZoom => widget.isInteractive ? 16.5 : 15.0;
+
   void _fitBoundary() {
     try {
       final points = _getBoundaryPoints();
@@ -125,13 +134,13 @@ class _FieldBoundaryMapWidgetState extends State<FieldBoundaryMapWidget>
         _mapController.fitCamera(
           CameraFit.bounds(
             bounds: bounds,
-            padding: const EdgeInsets.all(48.0),
-            maxZoom: 18.5,
+            padding: _fitPadding,
+            maxZoom: _fitMaxZoom,
           ),
         );
       } else {
         final center = _getEffectiveCenter();
-        _mapController.move(center, 16.5);
+        _mapController.move(center, _defaultZoom);
       }
     } catch (_) {}
   }
@@ -147,13 +156,13 @@ class _FieldBoundaryMapWidgetState extends State<FieldBoundaryMapWidget>
         _mapController.fitCamera(
           CameraFit.bounds(
             bounds: bounds,
-            padding: const EdgeInsets.all(48.0),
-            maxZoom: 18.5,
+            padding: _fitPadding,
+            maxZoom: _fitMaxZoom,
           ),
         );
       } else {
         final center = _getEffectiveCenter();
-        _mapController.move(center, 16.5);
+        _mapController.move(center, _defaultZoom);
       }
     } catch (_) {}
   }
@@ -172,8 +181,8 @@ class _FieldBoundaryMapWidgetState extends State<FieldBoundaryMapWidget>
           _mapController.fitCamera(
             CameraFit.bounds(
               bounds: bounds,
-              padding: const EdgeInsets.all(48.0),
-              maxZoom: 18.5,
+              padding: _fitPadding,
+              maxZoom: _fitMaxZoom,
             ),
           );
           return;
@@ -253,7 +262,7 @@ class _FieldBoundaryMapWidgetState extends State<FieldBoundaryMapWidget>
               mapController: _mapController,
               options: MapOptions(
                 initialCenter: centerPoint,
-                initialZoom: 16.8,
+                initialZoom: widget.isInteractive ? 16.8 : 15.0,
                 minZoom: 3.0,
                 maxZoom: 21.0,
                 interactionOptions: InteractionOptions(
@@ -271,9 +280,13 @@ class _FieldBoundaryMapWidgetState extends State<FieldBoundaryMapWidget>
                   subdomains: _isSatelliteStyle
                       ? MapboxConfig.getSatelliteSubdomains()
                       : MapboxConfig.getStreetSubdomains(),
-                  userAgentPackageName: 'com.itqanconsulting.farmtrack',
+                  userAgentPackageName: 'com.amaderkhamar',
                   maxZoom: 21,
-                  maxNativeZoom: _isSatelliteStyle ? 20 : 19,
+                  // Preview requests available native tiles and scales them.
+                  // Full-screen tile resolution stays exactly as before.
+                  maxNativeZoom: widget.isInteractive
+                      ? (_isSatelliteStyle ? 20 : 19)
+                      : (_isSatelliteStyle ? 14 : 18),
                   tileBuilder: (context, tileWidget, tile) {
                     return AnimatedOpacity(
                       opacity: 1.0,
@@ -591,30 +604,44 @@ class _FieldBoundaryMapWidgetState extends State<FieldBoundaryMapWidget>
             Positioned(
               bottom: 12,
               left: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white24, width: 0.8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.polyline_rounded, color: Color(0xFF00E676), size: 14),
-                    const SizedBox(width: 5),
-                    Text(
-                      'বহুভুজ সীমানা: ${effectiveBoundary.vertexCount} বিন্দু',
-                      style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w500),
-                    ),
-                    if (widget.formattedArea.isNotEmpty) ...[
-                      const Text(' • ', style: TextStyle(color: Colors.white54)),
-                      Text(
-                        widget.formattedArea,
-                        style: const TextStyle(color: Color(0xFF81C784), fontSize: 11.5, fontWeight: FontWeight.bold),
+              right: 12,
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Container(
+                  // Do not let the polygon/area legend exceed a narrow map.
+                  // A left-only Positioned leaves the row's text unconstrained.
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white24, width: 0.8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.polyline_rounded, color: Color(0xFF00E676), size: 14),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          'বহুভুজ সীমানা: ${effectiveBoundary.vertexCount} বিন্দু',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w500),
+                        ),
                       ),
+                      if (widget.formattedArea.isNotEmpty) ...[
+                        const Text(' • ', style: TextStyle(color: Colors.white54)),
+                        Flexible(
+                          child: Text(
+                            widget.formattedArea,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Color(0xFF81C784), fontSize: 11.5, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
